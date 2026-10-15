@@ -84,6 +84,40 @@ Describe "wtlaunch" {
         $out | Should -Match "Contraste du texte"
     }
 
+    It "opens one split-pane per declared pane and refocuses the first one" {
+        $paned = Join-Path $TestDrive "paned.json"
+        @(@{
+            name = "devwatch"
+            path = Join-Path $TestDrive "devwatch"
+            panes = @(@{ split = "vertical" }, @{ split = "horizontal" })
+        }) | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $paned
+        $out = Invoke-Launcher -Config $paned
+        $out | Should -Match "split-pane -V"
+        $out | Should -Match "split-pane -H"
+        ([regex]::Matches($out, "split-pane")).Count | Should -Be 2
+        ([regex]::Matches($out, "focus-pane -t 0")).Count | Should -Be 1
+    }
+
+    It "keeps a single shell when a project declares no panes" {
+        $out = Invoke-Launcher
+        $out | Should -Not -Match "split-pane"
+        $out | Should -Not -Match "focus-pane"
+    }
+
+    It "ignores a pane with an invalid split" {
+        $invalid = Join-Path $TestDrive "invalid-split.json"
+        @(@{
+            name = "devwatch"
+            path = Join-Path $TestDrive "devwatch"
+            panes = @(@{ split = "diagonal" })
+        }) | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $invalid
+        $out = Invoke-Launcher -Config $invalid
+        $out | Should -Match "Split invalide pour un panneau de devwatch"
+        $out | Should -Match "new-tab"
+        $out | Should -Not -Match "split-pane"
+        $out | Should -Not -Match "focus-pane"
+    }
+
     It "stops on invalid JSON" {
         $invalid = Join-Path $TestDrive "invalid.json"
         Set-Content $invalid "[{"
