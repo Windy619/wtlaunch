@@ -318,4 +318,63 @@ Describe "wtlaunch" {
             $out | Should -Match "focus-tab -t 0"
         }
     }
+
+    Context "current issue lookup" {
+        BeforeAll {
+            function Initialize-IssueRepo([string]$name, [string]$branch) {
+                $dir = Join-Path $TestDrive $name
+                New-Item -ItemType Directory -Path (Join-Path $dir ".git") -Force | Out-Null
+                Set-Content (Join-Path $dir ".git" "HEAD") "ref: refs/heads/$branch"
+                $cfg = Join-Path $TestDrive "$name.json"
+                @(@{ name = $name; path = $dir; command = "npm run dev" }) | ConvertTo-Json | Set-Content -Encoding utf8 $cfg
+                $cfg
+            }
+        }
+
+        It "runs the configured command with the id taken from the branch" {
+            $cfg = Initialize-IssueRepo "ticketed" "feat/42-demo"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'glab issue view {id}'"
+            $out | Should -Match "Start-Job"
+            $out | Should -Match "glab issue view 42"
+            $out | Should -Match "npm run dev"
+        }
+
+        It "reads the command from WTLAUNCH_ISSUE_COMMAND" {
+            $cfg = Initialize-IssueRepo "envticket" "fix/7-demo"
+            $env:WTLAUNCH_ISSUE_COMMAND = "show {id}"
+            try { $out = Invoke-Launcher -Config $cfg } finally { $env:WTLAUNCH_ISSUE_COMMAND = $null }
+            $out | Should -Match "show 7"
+        }
+
+        It "uses a custom branch pattern" {
+            $cfg = Initialize-IssueRepo "custom" "PROJ-123-demo"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'jira {id}' -BranchPattern '^(PROJ-\d+)'"
+            $out | Should -Match "jira PROJ-123"
+        }
+
+        It "does nothing without a configured command" {
+            $cfg = Initialize-IssueRepo "plain" "feat/5-demo"
+            Invoke-Launcher -Config $cfg | Should -Not -Match "Start-Job"
+        }
+
+        It "does nothing on a branch without an id" {
+            $cfg = Initialize-IssueRepo "noid" "develop"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'show {id}'"
+            $out | Should -Not -Match "Start-Job"
+            $out | Should -Match "new-tab"
+        }
+
+        It "is disabled by -NoIssue" {
+            $cfg = Initialize-IssueRepo "muted" "feat/8-demo"
+            Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'show {id}' -NoIssue" | Should -Not -Match "Start-Job"
+        }
+
+        It "warns about an invalid branch pattern and still opens the tabs" {
+            $cfg = Initialize-IssueRepo "badpattern" "feat/9-demo"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'show {id}' -BranchPattern '(['"
+            $out | Should -Match "Expression de branche invalide"
+            $out | Should -Not -Match "Start-Job"
+            $out | Should -Match "new-tab"
+        }
+    }
 }

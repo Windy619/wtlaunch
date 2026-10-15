@@ -8,6 +8,9 @@ param(
     [string]$EnvProcess,
     [switch]$Open,
     [string]$Window,
+    [string]$IssueCommand,
+    [string]$BranchPattern,
+    [switch]$NoIssue,
     [string]$ConfigPath = (Join-Path $PSScriptRoot "projects.json")
 )
 
@@ -70,6 +73,24 @@ function Get-TabTitle([string]$name, [string]$path, [bool]$hideBranch) {
     $title
 }
 
+# Runs inside the tab so the launch is never slowed down; the job has a short timeout and every failure is silent
+function Get-IssueLookup([string]$path, [bool]$disabled) {
+    if ($disabled -or -not $issueTemplate) { return }
+    $branch = Get-GitBranch $path
+    if (-not $branch -or $branch -notmatch $issuePattern -or -not $Matches[1]) { return }
+    $id = $Matches[1]
+    if ($id -notmatch '^[\w.-]+$') { return }
+    $lookup = $issueTemplate.Replace("{id}", $id)
+    "`$j = Start-Job -WorkingDirectory `$PWD -ScriptBlock { $lookup }; if (Wait-Job `$j -Timeout 5) { Receive-Job `$j 2>`$null }; Remove-Job `$j -Force"
+}
+
+$issueTemplate = if ($IssueCommand) { $IssueCommand } else { $env:WTLAUNCH_ISSUE_COMMAND }
+$issuePattern = if ($BranchPattern) { $BranchPattern } elseif ($env:WTLAUNCH_BRANCH_PATTERN) { $env:WTLAUNCH_BRANCH_PATTERN } else { '^[a-z]+/(\d+)-' }
+try { [void][regex]::new($issuePattern) } catch {
+    Write-Warning "Expression de branche invalide : $issuePattern"
+    $issueTemplate = $null
+}
+
 if (Test-Path $ConfigPath) {
     $projects = Get-Content -Raw -Encoding utf8 $ConfigPath | ConvertFrom-Json
 } else {
@@ -128,7 +149,8 @@ foreach ($proj in $projects) {
     $wtArgs += "new-tab"
     $wtArgs += "--title", "`"$(Get-TabTitle $proj.name $proj.path $NoBranch)`"", "--tabColor", "`"$color`""
     $wtArgs += "--suppressApplicationTitle", "-d", "`"$($proj.path)`""
-    $wtArgs += Get-StartupCommand $proj.command
+    $tabCommand = (@(Get-IssueLookup $proj.path $NoIssue) + $proj.command | Where-Object { $_ }) -join "; "
+    $wtArgs += Get-StartupCommand $tabCommand
 
     $splits = 0
     foreach ($pane in $proj.panes) {
