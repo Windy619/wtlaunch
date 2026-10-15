@@ -245,4 +245,55 @@ Describe "wtlaunch" {
             Invoke-Launcher -Config $cfg -Extra "-NoBranch" | Should -Match '--title "QUIET" '
         }
     }
+
+    Context "local environment and urls" {
+        BeforeAll {
+            $script:fakeEnv = Join-Path $TestDrive "fake-env-tool"
+            Set-Content $script:fakeEnv "x"
+            $script:webConfig = Join-Path $TestDrive "web.json"
+            @(
+                @{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; url = "http://devwatch.test" }
+                @{ name = "mediabox"; path = Join-Path $TestDrive "mediabox"; url = "not a url" }
+            ) | ConvertTo-Json | Set-Content -Encoding utf8 $script:webConfig
+        }
+
+        It "starts the environment when its process is not running" {
+            $out = Invoke-Launcher -Extra "-StartEnv '$script:fakeEnv'"
+            $out | Should -Match "Demarrer l'environnement local"
+            $out | Should -Match "new-tab"
+        }
+
+        It "does not start the environment when its process already runs" {
+            $out = Invoke-Launcher -Extra "-StartEnv '$script:fakeEnv' -EnvProcess pwsh"
+            $out | Should -Not -Match "Demarrer l'environnement local"
+        }
+
+        It "reads the environment from WTLAUNCH_ENV" {
+            $env:WTLAUNCH_ENV = $script:fakeEnv
+            try { $out = Invoke-Launcher } finally { $env:WTLAUNCH_ENV = $null }
+            $out | Should -Match "Demarrer l'environnement local"
+        }
+
+        It "warns about a missing environment and still opens the tabs" {
+            $out = Invoke-Launcher -Extra "-StartEnv '$(Join-Path $TestDrive "nothing")'"
+            $out | Should -Match "Environnement local introuvable"
+            $out | Should -Match "new-tab"
+        }
+
+        It "starts nothing without any environment configured" {
+            Invoke-Launcher | Should -Not -Match "Demarrer l'environnement local"
+        }
+
+        It "opens the project urls only with -Open" {
+            Invoke-Launcher -Config $script:webConfig | Should -Not -Match "Ouvrir dans le navigateur"
+            $out = Invoke-Launcher -Config $script:webConfig -Extra "-Open"
+            $out | Should -Match "http://devwatch.test"
+        }
+
+        It "warns about an invalid url and skips it" {
+            $out = Invoke-Launcher -Config $script:webConfig -Extra "-Open"
+            $out | Should -Match "URL invalide pour mediabox"
+            $out | Should -Not -Match "not a url"" on target"
+        }
+    }
 }
