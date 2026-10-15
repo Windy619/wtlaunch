@@ -19,9 +19,11 @@ function Get-Luminance([string]$hex) {
     0.2126 * $channels[0] + 0.7152 * $channels[1] + 0.0722 * $channels[2]
 }
 
+# Windows Terminal draws black text on "bright" tabs and white text otherwise, so measure that pair
 function Get-TextContrast([string]$hex) {
+    $r, $g, $b = foreach ($offset in 1, 3, 5) { [Convert]::ToInt32($hex.Substring($offset, 2), 16) }
     $l = Get-Luminance $hex
-    [math]::Max(1.05 / ($l + 0.05), ($l + 0.05) / 0.05)
+    if ((2 * $r + 5 * $g + $b) -gt 1024) { ($l + 0.05) / 0.05 } else { 1.05 / ($l + 0.05) }
 }
 
 # String.GetHashCode is randomized per process, so hash the name ourselves to keep colors stable
