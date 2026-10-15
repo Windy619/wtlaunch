@@ -1,12 +1,12 @@
 # wtlaunch
 
-Lanceur de projets Laragon dans Windows Terminal : un onglet nommé et coloré par projet, avec des panneaux et une commande de démarrage au choix.
+Lanceur de projets dans Windows Terminal : un onglet nommé et coloré par projet, avec des panneaux et une commande de démarrage au choix.
 
 ## Prérequis
 
 - Windows et [Windows Terminal](https://aka.ms/terminal) (`wt` dans le PATH), version récente pour `split-pane` et `focus-pane`.
 - [PowerShell 7](https://aka.ms/powershell) ou plus récent : le script utilise `SHA1.HashData`, absent de Windows PowerShell 5.
-- Laragon, dont le dossier `C:\laragon\www` sert au scan par défaut.
+- Des projets à ouvrir. Laragon est facultatif : `C:\laragon\www` n'est que le dossier du scan par défaut, et `projects.json` accepte des projets rangés n'importe où.
 
 ## Installation
 
@@ -44,7 +44,7 @@ Avec `pwsh -File`, une liste séparée par des virgules n'est pas découpée : p
 ## Sélection des projets
 
 - **Sans `projects.json`** : le script ouvre les dossiers de `C:\laragon\www` qui contiennent un `.git`.
-- **Avec `projects.json`** : seuls les projets listés sont ouverts. Le fichier est local et non versionné.
+- **Avec `projects.json`** : seuls les projets listés sont ouverts, où qu'ils soient sur le disque. Le fichier est local et non versionné. C'est la solution si vos projets ne sont pas dans `C:\laragon\www`.
 
 Copier l'exemple puis l'adapter :
 
