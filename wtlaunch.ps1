@@ -71,6 +71,19 @@ foreach ($proj in $projects) {
     $wtArgs += "new-tab"
     $wtArgs += "--title", "`"$($proj.name.ToUpper())`"", "--tabColor", "`"$color`""
     $wtArgs += "--suppressApplicationTitle", "-d", "`"$($proj.path)`""
+
+    $splits = 0
+    foreach ($pane in $proj.panes) {
+        $flag = switch ($pane.split) { "vertical" { "-V" } "horizontal" { "-H" } }
+        if (-not $flag) {
+            Write-Warning "Split invalide pour un panneau de $($proj.name) : $($pane.split)"
+            continue
+        }
+        $wtArgs += ";", "split-pane", $flag, "-d", "`"$($proj.path)`""
+        $splits++
+    }
+    # Each split moves focus to the new pane, so go back to the first one
+    if ($splits -gt 0) { $wtArgs += ";", "focus-pane", "-t", "0" }
 }
 
 if ($wtArgs.Count -eq 0) { return }
