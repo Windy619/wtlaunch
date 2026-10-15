@@ -36,6 +36,9 @@ Set-Alias wtl C:\chemin\vers\wtlaunch\wtlaunch.ps1
 | `-EnvProcess` | Nom du processus à surveiller, par défaut le nom de l'exécutable de `-StartEnv` |
 | `-Open` | Ouvre dans le navigateur le champ `url` des projets lancés |
 | `-Window nom` | Ajoute les onglets à la fenêtre Windows Terminal nommée, créée si elle n'existe pas |
+| `-IssueCommand` | Commande qui lit le ticket de la branche, avec le jeton `{id}` (voir plus bas) |
+| `-BranchPattern` | Expression régulière dont le premier groupe extrait l'identifiant de la branche |
+| `-NoIssue` | Désactive l'affichage du ticket, même si une commande est configurée |
 | `-ConfigPath` | Chemin du fichier de configuration (par défaut `projects.json` à côté du script) |
 | `-WhatIf` | Affiche la commande `wt` sans rien ouvrir |
 
@@ -99,6 +102,17 @@ Par défaut, chaque lancement ouvre une nouvelle fenêtre. Avec `-Window projets
 ```
 
 Les projets déjà ouverts dans cette fenêtre ne sont pas dédupliqués : relancer le script ajoute de nouveaux onglets. Le premier onglet n'est refocalisé que dans une nouvelle fenêtre.
+
+## Ticket en cours
+
+Quand le nom de la branche contient l'identifiant du ticket, l'onglet peut afficher ce ticket à son ouverture. Le script ne connaît aucun outil : vous fournissez la commande de lecture, avec `{id}` à la place de l'identifiant. `-IssueCommand` la définit, à défaut la variable `WTLAUNCH_ISSUE_COMMAND`. Sans commande, rien n'est affiché.
+
+```powershell
+.\wtlaunch.ps1 -IssueCommand "glab issue view {id}"
+.\wtlaunch.ps1 -IssueCommand "jira issue view {id}" -BranchPattern "^(PROJ-\d+)"
+```
+
+L'identifiant est le premier groupe de `-BranchPattern` (variable `WTLAUNCH_BRANCH_PATTERN`), par défaut `^[a-z]+/(\d+)-`, soit le format `feat/42-titre`. La commande tourne dans l'onglet, avec un délai de 5 secondes : le lancement n'est jamais ralenti, et une commande absente, une authentification manquante, une branche sans identifiant ou un délai dépassé n'affichent rien et ne bloquent rien. Le script ne manipule aucun jeton d'accès : il s'appuie sur la session de l'outil choisi. La commande est exécutée telle quelle, comme `command` : ne la définir que depuis une source de confiance.
 
 ## Environnement local et URL
 
