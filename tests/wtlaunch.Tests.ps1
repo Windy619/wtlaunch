@@ -296,4 +296,26 @@ Describe "wtlaunch" {
             $out | Should -Not -Match "not a url"" on target"
         }
     }
+
+    Context "named window" {
+        It "targets the named window with -Window" {
+            $out = Invoke-Launcher -Extra "-Window projets"
+            $out | Should -Match '-w "projets" new-tab'
+            ([regex]::Matches($out, "new-tab")).Count | Should -Be 3
+        }
+
+        It "keeps spaces in the window name inside quotes" {
+            Invoke-Launcher -Extra "-Window 'mes projets'" | Should -Match '-w "mes projets" new-tab'
+        }
+
+        It "does not refocus tab 0 of an existing window" {
+            Invoke-Launcher -Extra "-Window projets" | Should -Not -Match "focus-tab"
+        }
+
+        It "opens a new window as before without -Window" {
+            $out = Invoke-Launcher
+            $out | Should -Not -Match "-w "
+            $out | Should -Match "focus-tab -t 0"
+        }
+    }
 }

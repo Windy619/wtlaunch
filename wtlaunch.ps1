@@ -7,6 +7,7 @@ param(
     [string]$StartEnv,
     [string]$EnvProcess,
     [switch]$Open,
+    [string]$Window,
     [string]$ConfigPath = (Join-Path $PSScriptRoot "projects.json")
 )
 
@@ -145,7 +146,8 @@ foreach ($proj in $projects) {
 }
 
 if ($wtArgs.Count -eq 0) { return }
-$wtArgs += ";", "focus-tab", "-t", "0"
+# Tab indexes of an existing window are not ours, so only a new window gets its first tab focused
+if ($Window) { $wtArgs = @("-w", "`"$Window`"") + $wtArgs } else { $wtArgs += ";", "focus-tab", "-t", "0" }
 
 # The watched process defaults to the executable name, so a running environment is never started twice
 $envCommand = if ($StartEnv) { $StartEnv } else { $env:WTLAUNCH_ENV }
