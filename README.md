@@ -35,6 +35,7 @@ Set-Alias wtl C:\chemin\vers\wtlaunch\wtlaunch.ps1
 | `-StartEnv` | Exécutable ou commande de l'environnement local à démarrer s'il ne tourne pas (voir plus bas) |
 | `-EnvProcess` | Nom du processus à surveiller, par défaut le nom de l'exécutable de `-StartEnv` |
 | `-Open` | Ouvre dans le navigateur le champ `url` des projets lancés |
+| `-Window nom` | Ajoute les onglets à la fenêtre Windows Terminal nommée, créée si elle n'existe pas |
 | `-ConfigPath` | Chemin du fichier de configuration (par défaut `projects.json` à côté du script) |
 | `-WhatIf` | Affiche la commande `wt` sans rien ouvrir |
 
@@ -88,6 +89,16 @@ Chaque entrée de `panes` accepte `split` (`vertical` ou `horizontal`, obligatoi
 ```
 
 Les commandes sont exécutées telles quelles : ne pointer `-ConfigPath` que vers un fichier de confiance.
+
+## Réutiliser une fenêtre
+
+Par défaut, chaque lancement ouvre une nouvelle fenêtre. Avec `-Window projets`, les onglets rejoignent la fenêtre nommée `projets`, ou la créent si elle n'existe pas :
+
+```powershell
+.\wtlaunch.ps1 -Window projets
+```
+
+Les projets déjà ouverts dans cette fenêtre ne sont pas dédupliqués : relancer le script ajoute de nouveaux onglets. Le premier onglet n'est refocalisé que dans une nouvelle fenêtre.
 
 ## Environnement local et URL
 
