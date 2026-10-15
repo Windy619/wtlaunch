@@ -32,6 +32,9 @@ Set-Alias wtl C:\chemin\vers\wtlaunch\wtlaunch.ps1
 | `-Exclude a,b` | Lance tous les projets sauf ceux nommés |
 | `-Root a,b` | Dossiers à scanner pour trouver les projets (voir plus bas) |
 | `-NoBranch` | N'affiche pas la branche git dans le titre des onglets |
+| `-StartEnv` | Exécutable ou commande de l'environnement local à démarrer s'il ne tourne pas (voir plus bas) |
+| `-EnvProcess` | Nom du processus à surveiller, par défaut le nom de l'exécutable de `-StartEnv` |
+| `-Open` | Ouvre dans le navigateur le champ `url` des projets lancés |
 | `-ConfigPath` | Chemin du fichier de configuration (par défaut `projects.json` à côté du script) |
 | `-WhatIf` | Affiche la commande `wt` sans rien ouvrir |
 
@@ -67,6 +70,7 @@ Copy-Item projects.json.example projects.json
 | `path` | oui | Dossier du projet, aussi dossier de départ de chaque panneau |
 | `color` | non | Couleur de l'onglet au format `#RRGGBB`, sinon dérivée du nom |
 | `command` | non | Commande lancée dans l'onglet, le shell reste ouvert ensuite |
+| `url` | non | Adresse `http://` ou `https://` du projet, ouverte avec `-Open` |
 | `panes` | non | Liste de panneaux ajoutés à l'onglet |
 
 Chaque entrée de `panes` accepte `split` (`vertical` ou `horizontal`, obligatoire) et `command` (optionnel).
@@ -84,6 +88,17 @@ Chaque entrée de `panes` accepte `split` (`vertical` ou `horizontal`, obligatoi
 ```
 
 Les commandes sont exécutées telles quelles : ne pointer `-ConfigPath` que vers un fichier de confiance.
+
+## Environnement local et URL
+
+Si vos projets web demandent un environnement local (Laragon, XAMPP, un serveur maison...), `-StartEnv` le démarre avant l'ouverture des onglets, uniquement si son processus ne tourne pas déjà. La variable d'environnement `WTLAUNCH_ENV` joue le même rôle quand le paramètre est absent. Rien n'est supposé : sans configuration, le script ne démarre rien, et un exécutable introuvable donne un avertissement sans bloquer les onglets.
+
+```powershell
+.\wtlaunch.ps1 -StartEnv C:\laragon\laragon.exe -Open
+.\wtlaunch.ps1 -StartEnv C:\outils\serveur.exe -EnvProcess serveur-web
+```
+
+Le champ `url` d'un projet n'est utilisé qu'avec `-Open`. Avec `-WhatIf`, rien n'est démarré ni ouvert.
 
 ## Branche dans le titre
 
