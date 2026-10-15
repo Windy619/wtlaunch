@@ -3,6 +3,7 @@ param(
     [string[]]$Only,
     [string[]]$Exclude,
     [string[]]$Root,
+    [switch]$NoBranch,
     [string]$ConfigPath = (Join-Path $PSScriptRoot "projects.json")
 )
 
@@ -38,6 +39,31 @@ function Get-StartupCommand([string]$command) {
     if (-not $command) { return @() }
     $escaped = $command -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1' -replace ';', '\;'
     "pwsh", "-NoExit", "-Command", "`"$escaped`""
+}
+
+# Read HEAD directly so no git binary is needed; a worktree has a .git file pointing to its real folder
+function Get-GitBranch([string]$path) {
+    $git = Join-Path $path ".git"
+    if (Test-Path $git -PathType Leaf) {
+        $pointer = (Get-Content -Raw $git).Trim()
+        if ($pointer -notmatch '^gitdir:\s*(.+)$') { return }
+        $git = $Matches[1]
+        if (-not [IO.Path]::IsPathRooted($git)) { $git = Join-Path $path $git }
+    }
+    $head = Join-Path $git "HEAD"
+    if (-not (Test-Path $head -PathType Leaf)) { return }
+    if ((Get-Content -Raw $head) -match '^ref:\s*refs/heads/(.+?)\s*$') { $Matches[1] }
+}
+
+# The protected-branch flag is text, not only color, so it stays readable whatever the tab color
+function Get-TabTitle([string]$name, [string]$path, [bool]$hideBranch) {
+    $title = $name.ToUpper()
+    if ($hideBranch) { return $title }
+    $branch = Get-GitBranch $path
+    if (-not $branch) { return $title }
+    $title += " ($branch)"
+    if ($branch -in "develop", "staging", "main") { $title += " PROTEGEE" }
+    $title
 }
 
 if (Test-Path $ConfigPath) {
@@ -89,7 +115,7 @@ foreach ($proj in $projects) {
 
     if ($wtArgs.Count -gt 0) { $wtArgs += ";" }
     $wtArgs += "new-tab"
-    $wtArgs += "--title", "`"$($proj.name.ToUpper())`"", "--tabColor", "`"$color`""
+    $wtArgs += "--title", "`"$(Get-TabTitle $proj.name $proj.path $NoBranch)`"", "--tabColor", "`"$color`""
     $wtArgs += "--suppressApplicationTitle", "-d", "`"$($proj.path)`""
     $wtArgs += Get-StartupCommand $proj.command
 
