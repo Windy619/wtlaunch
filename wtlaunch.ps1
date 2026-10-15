@@ -4,6 +4,9 @@ param(
     [string[]]$Exclude,
     [string[]]$Root,
     [switch]$NoBranch,
+    [string]$StartEnv,
+    [string]$EnvProcess,
+    [switch]$Open,
     [string]$ConfigPath = (Join-Path $PSScriptRoot "projects.json")
 )
 
@@ -97,6 +100,7 @@ if ($projects.Count -eq 0) {
 }
 
 $wtArgs = @()
+$urls = @()
 foreach ($proj in $projects) {
     if (-not (Test-Path $proj.path)) {
         Write-Warning "Chemin introuvable pour $($proj.name) : $($proj.path)"
@@ -112,6 +116,12 @@ foreach ($proj in $projects) {
         Write-Warning "Contraste du texte sous 4,5:1 pour $($proj.name) ($color)"
     }
     if (-not $color) { $color = Get-PaletteColor $proj.name }
+
+    if ($proj.url -and $proj.url -notmatch '^https?://\S+$') {
+        Write-Warning "URL invalide pour $($proj.name) : $($proj.url)"
+    } elseif ($proj.url) {
+        $urls += $proj.url
+    }
 
     if ($wtArgs.Count -gt 0) { $wtArgs += ";" }
     $wtArgs += "new-tab"
@@ -137,6 +147,26 @@ foreach ($proj in $projects) {
 if ($wtArgs.Count -eq 0) { return }
 $wtArgs += ";", "focus-tab", "-t", "0"
 
+# The watched process defaults to the executable name, so a running environment is never started twice
+$envCommand = if ($StartEnv) { $StartEnv } else { $env:WTLAUNCH_ENV }
+if ($envCommand) {
+    if (-not (Test-Path $envCommand -PathType Leaf) -and -not (Get-Command $envCommand -ErrorAction SilentlyContinue)) {
+        Write-Warning "Environnement local introuvable : $envCommand"
+    } else {
+        $watched = if ($EnvProcess) { $EnvProcess } else { [IO.Path]::GetFileNameWithoutExtension($envCommand) }
+        if (-not (Get-Process -Name $watched -ErrorAction SilentlyContinue) -and
+            $PSCmdlet.ShouldProcess($envCommand, "Demarrer l'environnement local")) {
+            Start-Process $envCommand
+        }
+    }
+}
+
 if ($PSCmdlet.ShouldProcess("wt", $wtArgs -join " ")) {
     Start-Process wt -ArgumentList $wtArgs
+}
+
+if ($Open) {
+    foreach ($url in $urls) {
+        if ($PSCmdlet.ShouldProcess($url, "Ouvrir dans le navigateur")) { Start-Process $url }
+    }
 }
