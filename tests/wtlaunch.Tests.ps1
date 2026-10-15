@@ -13,6 +13,13 @@ BeforeAll {
     ) | ConvertTo-Json | Set-Content -Encoding utf8 $script:config
 
     # The -WhatIf message goes straight to the host, so run a child pwsh to read its stdout
+    foreach ($name in "alpha", "beta") {
+        New-Item -ItemType Directory -Path (Join-Path $TestDrive "rootA" $name ".git") -Force | Out-Null
+    }
+    New-Item -ItemType Directory -Path (Join-Path $TestDrive "rootB" "gamma" ".git") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $TestDrive "rootA" "plain") | Out-Null
+    $script:noConfig = Join-Path $TestDrive "absent.json"
+
     function Invoke-Launcher {
         param([hashtable]$Params = @{}, [string]$Config = $script:config)
         $options = foreach ($key in $Params.Keys) {
@@ -158,5 +165,38 @@ Describe "wtlaunch" {
         $out = Invoke-Launcher -Config $invalid
         $out | Should -Match "Conversion from JSON failed"
         $out | Should -Not -Match "new-tab"
+    }
+
+    It "scans the folders given with -Root and keeps only git projects" {
+        $out = Invoke-Launcher -Config $script:noConfig -Params @{ Root = (Join-Path $TestDrive "rootA"), (Join-Path $TestDrive "rootB") }
+        $out | Should -Match "ALPHA"
+        $out | Should -Match "GAMMA"
+        $out | Should -Not -Match "PLAIN"
+    }
+
+    It "reads the roots from WTLAUNCH_ROOT when -Root is absent" {
+        $env:WTLAUNCH_ROOT = (Join-Path $TestDrive "rootA") + ";" + (Join-Path $TestDrive "rootB")
+        try { $out = Invoke-Launcher -Config $script:noConfig } finally { $env:WTLAUNCH_ROOT = $null }
+        $out | Should -Match "BETA"
+        $out | Should -Match "GAMMA"
+    }
+
+    It "prefers -Root over WTLAUNCH_ROOT" {
+        $env:WTLAUNCH_ROOT = Join-Path $TestDrive "rootB"
+        try { $out = Invoke-Launcher -Config $script:noConfig -Params @{ Root = (Join-Path $TestDrive "rootA") } } finally { $env:WTLAUNCH_ROOT = $null }
+        $out | Should -Match "ALPHA"
+        $out | Should -Not -Match "GAMMA"
+    }
+
+    It "warns about a missing root without blocking the others" {
+        $out = Invoke-Launcher -Config $script:noConfig -Params @{ Root = (Join-Path $TestDrive "nowhere"), (Join-Path $TestDrive "rootB") }
+        $out | Should -Match "Dossier racine introuvable"
+        $out | Should -Match "GAMMA"
+    }
+
+    It "ignores -Root when a config file exists" {
+        $out = Invoke-Launcher -Params @{ Root = (Join-Path $TestDrive "rootB") }
+        $out | Should -Match "DEVWATCH"
+        $out | Should -Not -Match "GAMMA"
     }
 }

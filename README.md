@@ -30,12 +30,14 @@ Set-Alias wtl C:\chemin\vers\wtlaunch\wtlaunch.ps1
 |---|---|
 | `-Only a,b` | Ne lance que les projets nommés |
 | `-Exclude a,b` | Lance tous les projets sauf ceux nommés |
+| `-Root a,b` | Dossiers à scanner pour trouver les projets (voir plus bas) |
 | `-ConfigPath` | Chemin du fichier de configuration (par défaut `projects.json` à côté du script) |
 | `-WhatIf` | Affiche la commande `wt` sans rien ouvrir |
 
 ```powershell
 .\wtlaunch.ps1 -Only devwatch,mediabox
 .\wtlaunch.ps1 -Exclude windy619.github.io
+.\wtlaunch.ps1 -Root D:\code,E:\clients
 .\wtlaunch.ps1 -WhatIf
 ```
 
@@ -43,8 +45,14 @@ Avec `pwsh -File`, une liste séparée par des virgules n'est pas découpée : p
 
 ## Sélection des projets
 
-- **Sans `projects.json`** : le script ouvre les dossiers de `C:\laragon\www` qui contiennent un `.git`.
-- **Avec `projects.json`** : seuls les projets listés sont ouverts, où qu'ils soient sur le disque. Le fichier est local et non versionné. C'est la solution si vos projets ne sont pas dans `C:\laragon\www`.
+- **Sans `projects.json`** : le script scanne des dossiers racines et ouvre les sous-dossiers qui contiennent un `.git`. Les racines viennent, dans cet ordre, de `-Root`, de la variable d'environnement `WTLAUNCH_ROOT` (liste séparée par `;`), puis de `C:\laragon\www` s'il existe. Sans aucune racine, le script avertit et s'arrête. Une racine introuvable est signalée sans bloquer les autres.
+- **Avec `projects.json`** : seuls les projets listés sont ouverts, où qu'ils soient sur le disque, et les racines sont ignorées. Le fichier est local et non versionné.
+
+Pour fixer les racines une fois pour toutes :
+
+```powershell
+[Environment]::SetEnvironmentVariable("WTLAUNCH_ROOT", "D:\code;E:\clients", "User")
+```
 
 Copier l'exemple puis l'adapter :
 
