@@ -1,11 +1,12 @@
 [
     { "name": "devwatch", "path": "C:\\laragon\\www\\devwatch" },
-    { "name": "mediabox", "path": "C:\\laragon\\www\\mediabox", "color": "#1E5A8A" },
+    { "name": "mediabox", "path": "C:\\laragon\\www\\mediabox", "color": "#1E5A8A", "command": "claude" },
     {
         "name": "pilotage",
         "path": "C:\\laragon\\www\\pilotage",
+        "command": "php artisan serve",
         "panes": [
-            { "split": "vertical" },
+            { "split": "vertical", "command": "npm run dev" },
             { "split": "horizontal" }
         ]
     }

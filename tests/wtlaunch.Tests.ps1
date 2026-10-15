@@ -118,6 +118,40 @@ Describe "wtlaunch" {
         $out | Should -Not -Match "focus-pane"
     }
 
+    It "runs the project command in the tab and keeps the shell open" {
+        $cmd = Join-Path $TestDrive "command.json"
+        @(@{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; command = "php artisan serve" }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $cmd
+        $out = Invoke-Launcher -Config $cmd
+        $out.Contains('new-tab --title "DEVWATCH"') | Should -BeTrue
+        $out.Contains('pwsh -NoExit -Command "php artisan serve" ; focus-tab') | Should -BeTrue
+    }
+
+    It "runs a command in a pane without touching the tab shell" {
+        $cmd = Join-Path $TestDrive "pane-command.json"
+        @(@{
+            name = "devwatch"
+            path = Join-Path $TestDrive "devwatch"
+            panes = @(@{ split = "vertical"; command = "npm run dev" }, @{ split = "horizontal" })
+        }) | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $cmd
+        $out = Invoke-Launcher -Config $cmd
+        ([regex]::Matches($out, "-NoExit")).Count | Should -Be 1
+        $out | Should -Match 'split-pane -V -d "[^"]+" pwsh -NoExit -Command "npm run dev" ;'
+        $out | Should -Match 'split-pane -H -d "[^"]+" ; focus-pane'
+    }
+
+    It "escapes semicolons and quotes so wt passes the command through intact" {
+        $cmd = Join-Path $TestDrive "escape.json"
+        @(@{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; command = 'echo "hi"; echo bye' }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $cmd
+        $out = Invoke-Launcher -Config $cmd
+        $out.Contains('pwsh -NoExit -Command "echo \"hi\"\; echo bye"') | Should -BeTrue
+    }
+
+    It "starts no extra shell when no command is declared" {
+        Invoke-Launcher | Should -Not -Match "-NoExit"
+    }
+
     It "stops on invalid JSON" {
         $invalid = Join-Path $TestDrive "invalid.json"
         Set-Content $invalid "[{"

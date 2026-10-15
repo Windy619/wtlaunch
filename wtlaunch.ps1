@@ -33,6 +33,13 @@ function Get-PaletteColor([string]$name) {
     $palette[$hash[0] % $palette.Length]
 }
 
+# wt splits its command line on ';' and the Windows parser treats quotes and backslashes specially
+function Get-StartupCommand([string]$command) {
+    if (-not $command) { return @() }
+    $escaped = $command -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1' -replace ';', '\;'
+    "pwsh", "-NoExit", "-Command", "`"$escaped`""
+}
+
 if (Test-Path $ConfigPath) {
     $projects = Get-Content -Raw -Encoding utf8 $ConfigPath | ConvertFrom-Json
 } else {
@@ -71,6 +78,7 @@ foreach ($proj in $projects) {
     $wtArgs += "new-tab"
     $wtArgs += "--title", "`"$($proj.name.ToUpper())`"", "--tabColor", "`"$color`""
     $wtArgs += "--suppressApplicationTitle", "-d", "`"$($proj.path)`""
+    $wtArgs += Get-StartupCommand $proj.command
 
     $splits = 0
     foreach ($pane in $proj.panes) {
@@ -80,6 +88,7 @@ foreach ($proj in $projects) {
             continue
         }
         $wtArgs += ";", "split-pane", $flag, "-d", "`"$($proj.path)`""
+        $wtArgs += Get-StartupCommand $pane.command
         $splits++
     }
     # Each split moves focus to the new pane, so go back to the first one
