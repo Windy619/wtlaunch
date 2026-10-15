@@ -1,0 +1,32 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "develop" || $CI_COMMIT_BRANCH == "staging" || $CI_COMMIT_BRANCH == "main"
+
+default:
+  image: mcr.microsoft.com/powershell:7.4-ubuntu-22.04
+
+stages:
+  - lint
+  - test
+
+lint:
+  stage: lint
+  script:
+    - pwsh -NoProfile -Command "Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser"
+    - pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path . -Recurse -Severity Warning,Error -EnableExit"
+
+pester:
+  stage: test
+  script:
+    - pwsh -NoProfile -Command "Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser"
+    - pwsh -NoProfile -File tests/pester.ps1
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+smoke:
+  stage: test
+  script:
+    - pwsh -NoProfile -File tests/smoke.ps1
