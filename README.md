@@ -31,6 +31,7 @@ Set-Alias wtl C:\chemin\vers\wtlaunch\wtlaunch.ps1
 | `-Only a,b` | Ne lance que les projets nommés |
 | `-Exclude a,b` | Lance tous les projets sauf ceux nommés |
 | `-Root a,b` | Dossiers à scanner pour trouver les projets (voir plus bas) |
+| `-NoBranch` | N'affiche pas la branche git dans le titre des onglets |
 | `-ConfigPath` | Chemin du fichier de configuration (par défaut `projects.json` à côté du script) |
 | `-WhatIf` | Affiche la commande `wt` sans rien ouvrir |
 
@@ -83,6 +84,10 @@ Chaque entrée de `panes` accepte `split` (`vertical` ou `horizontal`, obligatoi
 ```
 
 Les commandes sont exécutées telles quelles : ne pointer `-ConfigPath` que vers un fichier de confiance.
+
+## Branche dans le titre
+
+Le titre de chaque onglet affiche la branche courante, lue une seule fois au lancement : `MEDIABOX (feat/6-demo)`. Sur `develop`, `staging` ou `main`, le titre ajoute `PROTEGEE` (`MEDIABOX (main) PROTEGEE`), un signal en texte qui ne dépend pas de la couleur. Un dossier sans `.git`, ou en HEAD détaché, garde le titre simple. `-NoBranch` désactive tout cela.
 
 ## Couleurs et contraste
 

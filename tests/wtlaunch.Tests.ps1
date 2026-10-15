@@ -21,11 +21,11 @@ BeforeAll {
     $script:noConfig = Join-Path $TestDrive "absent.json"
 
     function Invoke-Launcher {
-        param([hashtable]$Params = @{}, [string]$Config = $script:config)
+        param([hashtable]$Params = @{}, [string]$Config = $script:config, [string]$Extra = "")
         $options = foreach ($key in $Params.Keys) {
             "-$key " + (($Params[$key] | ForEach-Object { "'$_'" }) -join ",")
         }
-        $command = "& '$script:launcher' -WhatIf -ConfigPath '$Config' $($options -join ' ')"
+        $command = "& '$script:launcher' -WhatIf -ConfigPath '$Config' $($options -join ' ') $Extra"
         & (Get-Process -Id $PID).Path -NoProfile -Command $command 2>&1 | Out-String
     }
 }
@@ -198,5 +198,51 @@ Describe "wtlaunch" {
         $out = Invoke-Launcher -Params @{ Root = (Join-Path $TestDrive "rootB") }
         $out | Should -Match "DEVWATCH"
         $out | Should -Not -Match "GAMMA"
+    }
+
+    Context "branch in the tab title" {
+        BeforeAll {
+            function Initialize-TestRepo([string]$name, [string]$head) {
+                $dir = Join-Path $TestDrive $name
+                New-Item -ItemType Directory -Path (Join-Path $dir ".git") -Force | Out-Null
+                Set-Content (Join-Path $dir ".git" "HEAD") $head
+                $cfg = Join-Path $TestDrive "$name.json"
+                @(@{ name = $name; path = $dir }) | ConvertTo-Json | Set-Content -Encoding utf8 $cfg
+                $cfg
+            }
+        }
+
+        It "shows the current branch" {
+            $out = Invoke-Launcher -Config (Initialize-TestRepo "feature" "ref: refs/heads/feat/6-demo")
+            $out | Should -Match '--title "FEATURE \(feat/6-demo\)"'
+        }
+
+        It "flags a protected branch with text" {
+            $out = Invoke-Launcher -Config (Initialize-TestRepo "guarded" "ref: refs/heads/develop")
+            $out | Should -Match '--title "GUARDED \(develop\) PROTEGEE"'
+        }
+
+        It "keeps the plain title without a git folder or on a detached HEAD" {
+            $detached = Initialize-TestRepo "loose" "0123456789abcdef0123456789abcdef01234567"
+            Invoke-Launcher -Config $detached | Should -Match '--title "LOOSE" '
+            Invoke-Launcher | Should -Match '--title "DEVWATCH" '
+        }
+
+        It "follows the gitdir pointer of a worktree" {
+            $real = Join-Path $TestDrive "real-git"
+            New-Item -ItemType Directory -Path $real | Out-Null
+            Set-Content (Join-Path $real "HEAD") "ref: refs/heads/fix/7-linked"
+            $dir = Join-Path $TestDrive "linked"
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            Set-Content (Join-Path $dir ".git") "gitdir: $real"
+            $cfg = Join-Path $TestDrive "linked.json"
+            @(@{ name = "linked"; path = $dir }) | ConvertTo-Json | Set-Content -Encoding utf8 $cfg
+            Invoke-Launcher -Config $cfg | Should -Match 'LINKED \(fix/7-linked\)'
+        }
+
+        It "hides the branch with -NoBranch" {
+            $cfg = Initialize-TestRepo "quiet" "ref: refs/heads/main"
+            Invoke-Launcher -Config $cfg -Extra "-NoBranch" | Should -Match '--title "QUIET" '
+        }
     }
 }
