@@ -2,12 +2,12 @@
 param(
     [string[]]$Only,
     [string[]]$Exclude,
+    [string[]]$Root,
     [string]$ConfigPath = (Join-Path $PSScriptRoot "projects.json")
 )
 
 $ErrorActionPreference = "Stop"
 
-$wwwPath = "C:\laragon\www"
 # Dark tones only: each one gives at least 7:1 with the white text Windows Terminal picks
 $palette = @("#7A2A3A", "#2E5A4A", "#6E3A1E", "#7A2A5A", "#1E5A8A", "#5A1E8A", "#8A1E5A", "#2E5A2E")
 
@@ -43,9 +43,22 @@ function Get-StartupCommand([string]$command) {
 if (Test-Path $ConfigPath) {
     $projects = Get-Content -Raw -Encoding utf8 $ConfigPath | ConvertFrom-Json
 } else {
-    $projects = Get-ChildItem -Path $wwwPath -Directory |
-        Where-Object { Test-Path (Join-Path $_.FullName ".git") } |
-        ForEach-Object { [pscustomobject]@{ name = $_.Name; path = $_.FullName } }
+    $roots = if ($Root) { $Root }
+        elseif ($env:WTLAUNCH_ROOT) { $env:WTLAUNCH_ROOT -split ';' | Where-Object { $_ } }
+        elseif (Test-Path "C:\laragon\www") { "C:\laragon\www" }
+    if (-not $roots) {
+        Write-Warning "Aucun dossier racine : utiliser -Root, la variable WTLAUNCH_ROOT ou un projects.json."
+        return
+    }
+    $projects = foreach ($dir in $roots) {
+        if (-not (Test-Path $dir)) {
+            Write-Warning "Dossier racine introuvable : $dir"
+            continue
+        }
+        Get-ChildItem -Path $dir -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName ".git") } |
+            ForEach-Object { [pscustomobject]@{ name = $_.Name; path = $_.FullName } }
+    }
 }
 
 if ($Only) { $projects = $projects | Where-Object { $_.name -in $Only } }
