@@ -1,0 +1,380 @@
+BeforeAll {
+    $script:launcher = Join-Path $PSScriptRoot ".." "wtlaunch.ps1"
+
+    foreach ($name in "devwatch", "mediabox", "pilotage") {
+        New-Item -ItemType Directory -Path (Join-Path $TestDrive $name) | Out-Null
+    }
+
+    $script:config = Join-Path $TestDrive "projects.json"
+    @(
+        @{ name = "devwatch"; path = Join-Path $TestDrive "devwatch" }
+        @{ name = "mediabox"; path = Join-Path $TestDrive "mediabox"; color = "#1E5A8A" }
+        @{ name = "pilotage"; path = Join-Path $TestDrive "pilotage" }
+    ) | ConvertTo-Json | Set-Content -Encoding utf8 $script:config
+
+    # The -WhatIf message goes straight to the host, so run a child pwsh to read its stdout
+    foreach ($name in "alpha", "beta") {
+        New-Item -ItemType Directory -Path (Join-Path $TestDrive "rootA" $name ".git") -Force | Out-Null
+    }
+    New-Item -ItemType Directory -Path (Join-Path $TestDrive "rootB" "gamma" ".git") -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $TestDrive "rootA" "plain") | Out-Null
+    $script:noConfig = Join-Path $TestDrive "absent.json"
+
+    function Invoke-Launcher {
+        param([hashtable]$Params = @{}, [string]$Config = $script:config, [string]$Extra = "")
+        $options = foreach ($key in $Params.Keys) {
+            "-$key " + (($Params[$key] | ForEach-Object { "'$_'" }) -join ",")
+        }
+        $command = "& '$script:launcher' -WhatIf -ConfigPath '$Config' $($options -join ' ') $Extra"
+        & (Get-Process -Id $PID).Path -NoProfile -Command $command 2>&1 | Out-String
+    }
+}
+
+Describe "wtlaunch" {
+    It "opens one tab per project from the config" {
+        $out = Invoke-Launcher
+        ([regex]::Matches($out, "new-tab")).Count | Should -Be 3
+        $out | Should -Match '--title "DEVWATCH"'
+    }
+
+    It "uses the color declared in the config" {
+        Invoke-Launcher | Should -Match '--title "MEDIABOX" --tabColor "#1E5A8A"'
+    }
+
+    It "keeps the same color for a project across runs" {
+        $first = Invoke-Launcher -Params @{ Only = "devwatch" }
+        $second = Invoke-Launcher -Params @{ Only = "devwatch" }
+        $first | Should -Be $second
+    }
+
+    It "restricts the tabs with -Only" {
+        $out = Invoke-Launcher -Params @{ Only = "devwatch", "pilotage" }
+        $out | Should -Match "DEVWATCH"
+        $out | Should -Not -Match "MEDIABOX"
+    }
+
+    It "removes tabs with -Exclude" {
+        $out = Invoke-Launcher -Params @{ Exclude = "mediabox" }
+        $out | Should -Match "PILOTAGE"
+        $out | Should -Not -Match "MEDIABOX"
+    }
+
+    It "warns and opens nothing when no project matches" {
+        $out = Invoke-Launcher -Params @{ Only = "unknown" }
+        $out | Should -Match "Aucun projet"
+        $out | Should -Not -Match "new-tab"
+    }
+
+    It "skips a project whose path does not exist" {
+        $broken = Join-Path $TestDrive "broken.json"
+        @(@{ name = "ghost"; path = Join-Path $TestDrive "missing" }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $broken
+        $out = Invoke-Launcher -Config $broken
+        $out | Should -Match "Chemin introuvable pour ghost"
+        $out | Should -Not -Match "new-tab"
+    }
+
+    It "falls back to the palette on an invalid color" {
+        $bad = Join-Path $TestDrive "bad-color.json"
+        @(@{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; color = "zzz" }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $bad
+        $out = Invoke-Launcher -Config $bad
+        $out | Should -Match "Couleur invalide pour devwatch"
+        $out | Should -Match '--tabColor "#[0-9A-F]{6}"'
+    }
+
+    It "warns when the text contrast falls below 4.5:1" {
+        $pale = Join-Path $TestDrive "pale.json"
+        @(@{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; color = "#808080" }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $pale
+        $out = Invoke-Launcher -Config $pale
+        $out | Should -Match "Contraste du texte"
+    }
+
+    It "opens one split-pane per declared pane and refocuses the first one" {
+        $paned = Join-Path $TestDrive "paned.json"
+        @(@{
+            name = "devwatch"
+            path = Join-Path $TestDrive "devwatch"
+            panes = @(@{ split = "vertical" }, @{ split = "horizontal" })
+        }) | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $paned
+        $out = Invoke-Launcher -Config $paned
+        $out | Should -Match "split-pane -V"
+        $out | Should -Match "split-pane -H"
+        ([regex]::Matches($out, "split-pane")).Count | Should -Be 2
+        ([regex]::Matches($out, "focus-pane -t 0")).Count | Should -Be 1
+    }
+
+    It "keeps a single shell when a project declares no panes" {
+        $out = Invoke-Launcher
+        $out | Should -Not -Match "split-pane"
+        $out | Should -Not -Match "focus-pane"
+    }
+
+    It "ignores a pane with an invalid split" {
+        $invalid = Join-Path $TestDrive "invalid-split.json"
+        @(@{
+            name = "devwatch"
+            path = Join-Path $TestDrive "devwatch"
+            panes = @(@{ split = "diagonal" })
+        }) | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $invalid
+        $out = Invoke-Launcher -Config $invalid
+        $out | Should -Match "Split invalide pour un panneau de devwatch"
+        $out | Should -Match "new-tab"
+        $out | Should -Not -Match "split-pane"
+        $out | Should -Not -Match "focus-pane"
+    }
+
+    It "runs the project command in the tab and keeps the shell open" {
+        $cmd = Join-Path $TestDrive "command.json"
+        @(@{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; command = "php artisan serve" }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $cmd
+        $out = Invoke-Launcher -Config $cmd
+        $out.Contains('new-tab --title "DEVWATCH"') | Should -BeTrue
+        $out.Contains('pwsh -NoExit -Command "php artisan serve" ; focus-tab') | Should -BeTrue
+    }
+
+    It "runs a command in a pane without touching the tab shell" {
+        $cmd = Join-Path $TestDrive "pane-command.json"
+        @(@{
+            name = "devwatch"
+            path = Join-Path $TestDrive "devwatch"
+            panes = @(@{ split = "vertical"; command = "npm run dev" }, @{ split = "horizontal" })
+        }) | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 $cmd
+        $out = Invoke-Launcher -Config $cmd
+        ([regex]::Matches($out, "-NoExit")).Count | Should -Be 1
+        $out | Should -Match 'split-pane -V -d "[^"]+" pwsh -NoExit -Command "npm run dev" ;'
+        $out | Should -Match 'split-pane -H -d "[^"]+" ; focus-pane'
+    }
+
+    It "escapes semicolons and quotes so wt passes the command through intact" {
+        $cmd = Join-Path $TestDrive "escape.json"
+        @(@{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; command = 'echo "hi"; echo bye' }) |
+            ConvertTo-Json | Set-Content -Encoding utf8 $cmd
+        $out = Invoke-Launcher -Config $cmd
+        $out.Contains('pwsh -NoExit -Command "echo \"hi\"\; echo bye"') | Should -BeTrue
+    }
+
+    It "starts no extra shell when no command is declared" {
+        Invoke-Launcher | Should -Not -Match "-NoExit"
+    }
+
+    It "stops on invalid JSON" {
+        $invalid = Join-Path $TestDrive "invalid.json"
+        Set-Content $invalid "[{"
+        $out = Invoke-Launcher -Config $invalid
+        $out | Should -Match "Conversion from JSON failed"
+        $out | Should -Not -Match "new-tab"
+    }
+
+    It "scans the folders given with -Root and keeps only git projects" {
+        $out = Invoke-Launcher -Config $script:noConfig -Params @{ Root = (Join-Path $TestDrive "rootA"), (Join-Path $TestDrive "rootB") }
+        $out | Should -Match "ALPHA"
+        $out | Should -Match "GAMMA"
+        $out | Should -Not -Match "PLAIN"
+    }
+
+    It "reads the roots from WTLAUNCH_ROOT when -Root is absent" {
+        $env:WTLAUNCH_ROOT = (Join-Path $TestDrive "rootA") + ";" + (Join-Path $TestDrive "rootB")
+        try { $out = Invoke-Launcher -Config $script:noConfig } finally { $env:WTLAUNCH_ROOT = $null }
+        $out | Should -Match "BETA"
+        $out | Should -Match "GAMMA"
+    }
+
+    It "prefers -Root over WTLAUNCH_ROOT" {
+        $env:WTLAUNCH_ROOT = Join-Path $TestDrive "rootB"
+        try { $out = Invoke-Launcher -Config $script:noConfig -Params @{ Root = (Join-Path $TestDrive "rootA") } } finally { $env:WTLAUNCH_ROOT = $null }
+        $out | Should -Match "ALPHA"
+        $out | Should -Not -Match "GAMMA"
+    }
+
+    It "warns about a missing root without blocking the others" {
+        $out = Invoke-Launcher -Config $script:noConfig -Params @{ Root = (Join-Path $TestDrive "nowhere"), (Join-Path $TestDrive "rootB") }
+        $out | Should -Match "Dossier racine introuvable"
+        $out | Should -Match "GAMMA"
+    }
+
+    It "ignores -Root when a config file exists" {
+        $out = Invoke-Launcher -Params @{ Root = (Join-Path $TestDrive "rootB") }
+        $out | Should -Match "DEVWATCH"
+        $out | Should -Not -Match "GAMMA"
+    }
+
+    Context "branch in the tab title" {
+        BeforeAll {
+            function Initialize-TestRepo([string]$name, [string]$head) {
+                $dir = Join-Path $TestDrive $name
+                New-Item -ItemType Directory -Path (Join-Path $dir ".git") -Force | Out-Null
+                Set-Content (Join-Path $dir ".git" "HEAD") $head
+                $cfg = Join-Path $TestDrive "$name.json"
+                @(@{ name = $name; path = $dir }) | ConvertTo-Json | Set-Content -Encoding utf8 $cfg
+                $cfg
+            }
+        }
+
+        It "shows the current branch" {
+            $out = Invoke-Launcher -Config (Initialize-TestRepo "feature" "ref: refs/heads/feat/6-demo")
+            $out | Should -Match '--title "FEATURE \(feat/6-demo\)"'
+        }
+
+        It "flags a protected branch with text" {
+            $out = Invoke-Launcher -Config (Initialize-TestRepo "guarded" "ref: refs/heads/develop")
+            $out | Should -Match '--title "GUARDED \(develop\) PROTEGEE"'
+        }
+
+        It "keeps the plain title without a git folder or on a detached HEAD" {
+            $detached = Initialize-TestRepo "loose" "0123456789abcdef0123456789abcdef01234567"
+            Invoke-Launcher -Config $detached | Should -Match '--title "LOOSE" '
+            Invoke-Launcher | Should -Match '--title "DEVWATCH" '
+        }
+
+        It "follows the gitdir pointer of a worktree" {
+            $real = Join-Path $TestDrive "real-git"
+            New-Item -ItemType Directory -Path $real | Out-Null
+            Set-Content (Join-Path $real "HEAD") "ref: refs/heads/fix/7-linked"
+            $dir = Join-Path $TestDrive "linked"
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            Set-Content (Join-Path $dir ".git") "gitdir: $real"
+            $cfg = Join-Path $TestDrive "linked.json"
+            @(@{ name = "linked"; path = $dir }) | ConvertTo-Json | Set-Content -Encoding utf8 $cfg
+            Invoke-Launcher -Config $cfg | Should -Match 'LINKED \(fix/7-linked\)'
+        }
+
+        It "hides the branch with -NoBranch" {
+            $cfg = Initialize-TestRepo "quiet" "ref: refs/heads/main"
+            Invoke-Launcher -Config $cfg -Extra "-NoBranch" | Should -Match '--title "QUIET" '
+        }
+    }
+
+    Context "local environment and urls" {
+        BeforeAll {
+            $script:fakeEnv = Join-Path $TestDrive "fake-env-tool"
+            Set-Content $script:fakeEnv "x"
+            $script:webConfig = Join-Path $TestDrive "web.json"
+            @(
+                @{ name = "devwatch"; path = Join-Path $TestDrive "devwatch"; url = "http://devwatch.test" }
+                @{ name = "mediabox"; path = Join-Path $TestDrive "mediabox"; url = "not a url" }
+            ) | ConvertTo-Json | Set-Content -Encoding utf8 $script:webConfig
+        }
+
+        It "starts the environment when its process is not running" {
+            $out = Invoke-Launcher -Extra "-StartEnv '$script:fakeEnv'"
+            $out | Should -Match "Demarrer l'environnement local"
+            $out | Should -Match "new-tab"
+        }
+
+        It "does not start the environment when its process already runs" {
+            $out = Invoke-Launcher -Extra "-StartEnv '$script:fakeEnv' -EnvProcess pwsh"
+            $out | Should -Not -Match "Demarrer l'environnement local"
+        }
+
+        It "reads the environment from WTLAUNCH_ENV" {
+            $env:WTLAUNCH_ENV = $script:fakeEnv
+            try { $out = Invoke-Launcher } finally { $env:WTLAUNCH_ENV = $null }
+            $out | Should -Match "Demarrer l'environnement local"
+        }
+
+        It "warns about a missing environment and still opens the tabs" {
+            $out = Invoke-Launcher -Extra "-StartEnv '$(Join-Path $TestDrive "nothing")'"
+            $out | Should -Match "Environnement local introuvable"
+            $out | Should -Match "new-tab"
+        }
+
+        It "starts nothing without any environment configured" {
+            Invoke-Launcher | Should -Not -Match "Demarrer l'environnement local"
+        }
+
+        It "opens the project urls only with -Open" {
+            Invoke-Launcher -Config $script:webConfig | Should -Not -Match "Ouvrir dans le navigateur"
+            $out = Invoke-Launcher -Config $script:webConfig -Extra "-Open"
+            $out | Should -Match "http://devwatch.test"
+        }
+
+        It "warns about an invalid url and skips it" {
+            $out = Invoke-Launcher -Config $script:webConfig -Extra "-Open"
+            $out | Should -Match "URL invalide pour mediabox"
+            $out | Should -Not -Match "not a url"" on target"
+        }
+    }
+
+    Context "named window" {
+        It "targets the named window with -Window" {
+            $out = Invoke-Launcher -Extra "-Window projets"
+            $out | Should -Match '-w "projets" new-tab'
+            ([regex]::Matches($out, "new-tab")).Count | Should -Be 3
+        }
+
+        It "keeps spaces in the window name inside quotes" {
+            Invoke-Launcher -Extra "-Window 'mes projets'" | Should -Match '-w "mes projets" new-tab'
+        }
+
+        It "does not refocus tab 0 of an existing window" {
+            Invoke-Launcher -Extra "-Window projets" | Should -Not -Match "focus-tab"
+        }
+
+        It "opens a new window as before without -Window" {
+            $out = Invoke-Launcher
+            $out | Should -Not -Match "-w "
+            $out | Should -Match "focus-tab -t 0"
+        }
+    }
+
+    Context "current issue lookup" {
+        BeforeAll {
+            function Initialize-IssueRepo([string]$name, [string]$branch) {
+                $dir = Join-Path $TestDrive $name
+                New-Item -ItemType Directory -Path (Join-Path $dir ".git") -Force | Out-Null
+                Set-Content (Join-Path $dir ".git" "HEAD") "ref: refs/heads/$branch"
+                $cfg = Join-Path $TestDrive "$name.json"
+                @(@{ name = $name; path = $dir; command = "npm run dev" }) | ConvertTo-Json | Set-Content -Encoding utf8 $cfg
+                $cfg
+            }
+        }
+
+        It "runs the configured command with the id taken from the branch" {
+            $cfg = Initialize-IssueRepo "ticketed" "feat/42-demo"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'glab issue view {id}'"
+            $out | Should -Match "Start-Job"
+            $out | Should -Match "glab issue view 42"
+            $out | Should -Match "npm run dev"
+        }
+
+        It "reads the command from WTLAUNCH_ISSUE_COMMAND" {
+            $cfg = Initialize-IssueRepo "envticket" "fix/7-demo"
+            $env:WTLAUNCH_ISSUE_COMMAND = "show {id}"
+            try { $out = Invoke-Launcher -Config $cfg } finally { $env:WTLAUNCH_ISSUE_COMMAND = $null }
+            $out | Should -Match "show 7"
+        }
+
+        It "uses a custom branch pattern" {
+            $cfg = Initialize-IssueRepo "custom" "PROJ-123-demo"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'jira {id}' -BranchPattern '^(PROJ-\d+)'"
+            $out | Should -Match "jira PROJ-123"
+        }
+
+        It "does nothing without a configured command" {
+            $cfg = Initialize-IssueRepo "plain" "feat/5-demo"
+            Invoke-Launcher -Config $cfg | Should -Not -Match "Start-Job"
+        }
+
+        It "does nothing on a branch without an id" {
+            $cfg = Initialize-IssueRepo "noid" "develop"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'show {id}'"
+            $out | Should -Not -Match "Start-Job"
+            $out | Should -Match "new-tab"
+        }
+
+        It "is disabled by -NoIssue" {
+            $cfg = Initialize-IssueRepo "muted" "feat/8-demo"
+            Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'show {id}' -NoIssue" | Should -Not -Match "Start-Job"
+        }
+
+        It "warns about an invalid branch pattern and still opens the tabs" {
+            $cfg = Initialize-IssueRepo "badpattern" "feat/9-demo"
+            $out = Invoke-Launcher -Config $cfg -Extra "-IssueCommand 'show {id}' -BranchPattern '(['"
+            $out | Should -Match "Expression de branche invalide"
+            $out | Should -Not -Match "Start-Job"
+            $out | Should -Match "new-tab"
+        }
+    }
+}
